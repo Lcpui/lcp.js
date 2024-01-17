@@ -1,8 +1,8 @@
 ﻿const lcp = (function () {
     //初始化虚拟id列表，Lcp实例的容器
     window.$lcpid = window.$lcpid instanceof Array ? window.$lcpid : [];
-    const exclude = ["tag", "$rely", "class", "style", "text", "children", "$lcpid", "css", "$el", "for", "$for", "show", "if", "$index", "$css", "$key", "$index_", "$value", "$forList", "$state", "$defer", "$other"];
-    
+    const exclude = ["tag","data", "$load", "$rely", "class", "style", "text", "children", "$lcpid", "css", "$el", "for", "$for", "show", "if", "$index", "$css", "$key", "$index_", "$value", "$forList", "$state", "$defer", "$other", "listenDataList"];
+
     Object.prototype.text_ = function (text) {
         this.text = text;
         return this;
@@ -69,7 +69,7 @@
     Object.defineProperty(Object.prototype, "$other_", {
         enumerable: false
     });
-    
+
     //临时的解析方法
     function $parse(str, obj) {
         let arr = Object.keys(obj);
@@ -84,7 +84,6 @@
     //方法树
     const tree = {
         //这个方法用于新增子元素
-
         createTrunk(description, treex, index_, el, defer = false) {
             //自身
             const trees = description;
@@ -95,6 +94,40 @@
             trees.$rely = false;
             //不允许传其他类型数据
             if (trees instanceof Object) {
+                trees.listenDataList = {};
+                trees.$load = true;
+                //对data的数据进行数据双向绑定
+                if (trees.data instanceof Object) {
+                    trees.data = new Proxy(trees.data, {
+                        set(target, p, newValue) {
+                            if (p == "length") {
+                                target[p] = newValue;
+                                return true;
+                            }
+                            //数据进行更新
+                            //有元素依赖这个数据时
+                            if (!trees.$load) {
+                                if (trees.listenDataList[p] instanceof Object) {
+                                    target[p] = newValue;
+                                    tree.updateTree(trees, p, newValue);
+                                }
+                            }
+
+                            target[p] = newValue;
+                            return true;
+                        }
+                    });
+                    //对data数据进行深层次的监听
+                    if (trees.data) {
+                        tree.listenData(trees);
+                        //记录数据绑定的源头，使数据更新的更精准
+                        let key_ = Object.keys(trees.data);
+                        for (let i = 0; i < key_.length; i++) {
+                            trees.listenDataList[key_[i]] = {};
+                        }
+                    }
+                }
+
                 //将其他属性进行一个初始化
                 let key_ = Object.keys(trees);
                 for (let k = 0; k < key_.length; k++) {
@@ -145,12 +178,8 @@
                 if (!trees.for && !treex.$for) {
                     //根据描述的标签名来创建元素
                     let data = {};
-                    if(forbear.data){
-                    let key_ = Object.keys(forbear.data);
-                    for (let i = 0; i < key_.length; i++) {
-                        data[key_[i]] = forbear.data[key_[i]]
-                    }
-                }
+                    tree.parentToTreesDataRender(trees.$lcpid, data);
+
                     let tag = tree.render(trees, 0, state, data);
                     if (tag) {
                         if (!defer) {
@@ -176,7 +205,7 @@
                     trees.$el = [];
                     //对祖父与父都是列表渲染情况下，处理细节
                     //对css属性进行处理，创建对应的style到head标签
-                    
+
                     //当父元素是列表循环时
                     let manage = {};
                     let manage_ = {};
@@ -186,12 +215,8 @@
                     let objx = {};
                     let arrx = [];
                     let data = {};
-                    if(forbear.data){
-                    let key_ = Object.keys(forbear.data);
-                    for (let i = 0; i < key_.length; i++) {
-                        data[key_[i]] = forbear.data[key_[i]]
-                    }
-                }
+                    tree.parentToTreesDataRender(trees.$lcpid, data);
+
                     for (let i = 0; i < treex.$el.length; i++) {
                         //将元素的数据与列表渲染关键词绑定
                         tree.reality(treex, arrx, manage, manage_, objx, managex, data);
@@ -437,19 +462,15 @@
                         let valuex_ = "value";
                         let keyx_ = "key";
                         let indexx_ = "index";
-                        
+
                         //将自身绑定为列表数据来源
                         trees.$for = trees.$lcpid;
                         trees.$el = [];
                         trees.$state.if = [];
                         trees.$state.parent = [];
                         let data = {};
-                        if(forbear.data){
-                        let key_ = Object.keys(forbear.data);
-                        for (let i = 0; i < key_.length; i++) {
-                            data[key_[i]] = forbear.data[key_[i]];
-                        }
-                    }
+                        tree.parentToTreesDataRender(trees.$lcpid, data);
+
                         //判断列表渲染依据的是数组还是对象还是字符串
                         //渲染源是数组时
                         if (trees.for instanceof Array) {
@@ -547,6 +568,7 @@
                                 }
                                 forbear.forKeyList['value'][trees.$lcpid] = valuex_;
                                 forbear.forKeyList['index'][trees.$lcpid] = indexx_;
+
                                 for (let i = 0; i < render.length; i++) {
 
                                     data[valuex_] = render[i];
@@ -699,7 +721,7 @@
                             this.$el.remove();
                         }
                     }
-            
+
                     if (this.css) {
                         if (this.$css) {
                             document.head.removeChild(this.$css);
@@ -761,7 +783,7 @@
                             parent.children[i].$index_++;
                             arr[arr.length - 1] = parent.children[i].$index_;
                             parent.children[i].$lcpid = arr.join('-');
-            
+
                             //判断兄弟元素绑定css样式了没
                             if (parent.children[i].css) {
                                 //判断兄弟元素是不是列表渲染
@@ -785,7 +807,7 @@
                     //返回新增的虚拟描述
                     return parent.children[index_];
                 }
-            
+
                 trees.nextElementSibling = function () {
                     let index_ = parseInt(this.$index_) + 1;
                     return this.parent().children[index_];
@@ -875,7 +897,7 @@
 
         },
         renderTrunk(trees, index_, defer = false) {
-            if(index_ == 0){
+            if (index_ == 0) {
                 if (trees.css) {
                     let style = document.createElement("style");
                     let text = trees.css.replace(/\{lcpid\}/g, "*[v-lcpid='" + trees.$lcpid + "']");
@@ -892,14 +914,10 @@
                 //进行推导数据
                 let arrx = [];
                 let objx = {};
-                const forbear = tree.forbear(trees.$lcpid);
+
                 let data = {};
-                if(forbear.data){
-                let key_ = Object.keys(forbear.data);
-                for (let i = 0; i < key_.length; i++) {
-                    data[key_[i]] = forbear.data[key_[i]]
-                }
-            }
+                tree.parentToTreesDataRender(trees.$lcpid, data);
+
                 let realData = treesRealData[trees.$lcpid];
                 for (let i = 0; i < index_; i++) {
                     tree.reality(trees, arrx, manage, manage_, objx, managex, data);
@@ -1041,7 +1059,12 @@
                     let chx = trees['children'] && trees['children'].length;
                     if (trees['text'] && !chx) {
                         let texts = tree.textParse(trees['text'], true, data);
-                        tag.textContent = texts;
+                        if (trees.tag == 'svg') {
+                            tag.innerHTML = texts;
+                        } else {
+                            tag.textContent = texts;
+                        }
+
                         realObj.text = texts;
                     }
                     realData.push(realObj);
@@ -1077,12 +1100,8 @@
                                 let arrx = [];
                                 let objx = {};
                                 let data = {};
-                                if(forbear.data){
-                                let key_ = Object.keys(forbear.data);
-                                for (let i = 0; i < key_.length; i++) {
-                                    data[key_[i]] = forbear.data[key_[i]]
-                                }
-                            }
+                                tree.parentToTreesDataRender(self.$lcpid, data);
+
                                 for (let j = 0; j < trees.$el.length; j++) {
                                     tree.reality(trees, arrx, manage, manage_, objx, managex, data);
                                     let render = tree.textParse(self.for, false, data);
@@ -1141,7 +1160,7 @@
             }
         },
         //渲染
-        render(trees, i, state, data) {
+        render(trees, i, state, data, el) {
             let arr = treesRealData[trees.$lcpid];
             let weakobj = {};
             let tag;
@@ -1150,7 +1169,9 @@
             } else {
                 tag = document.createElement(trees.tag);
             }
-
+            if(el){
+                tag = el;
+            }
             if (trees.tag != "text") {
                 if (trees.css) {
                     tag.setAttribute("v-lcpid", trees.$lcpid);
@@ -1266,8 +1287,15 @@
             if (trees['text']) {
                 let chx = trees['children'] && trees['children'].length;
                 if (!chx) {
-                    let texts = tree.textParse(trees['text'], true, data);
-                    tag.textContent = texts;
+                    let texts = trees['text'];
+                    if (trees.tag != "pre" && trees.tag != "code") {
+                        texts = tree.textParse(texts, true, data);
+                    }
+                    if (trees.tag == 'svg') {
+                        tag.innerHTML = texts;
+                    } else {
+                        tag.textContent = texts;
+                    }
                     weakobj.text = texts;
                 }
             }
@@ -1317,19 +1345,14 @@
                 let manage_ = {};
                 let managex = {};
                 let parent = trees.parent();
-                let forbear = tree.forbear(trees.$lcpid);
                 let frag = document.createDocumentFragment();
                 let m = -1;
                 let s = -1;
                 let arr = [];
                 let objx = {};
                 let data = {};
-                if(forbear.data){
-                let key_ = Object.keys(forbear.data);
-                for (let i = 0; i < key_.length; i++) {
-                    data[key_[i]] = forbear.data[key_[i]]
-                }
-            }
+                tree.parentToTreesDataRender(trees.$lcpid, data);
+
                 let realData = treesRealData[trees.$lcpid];
                 let if_if = trees.hasOwnProperty("if");
                 for (let i = 0; i < trees.$el.length; i++) {
@@ -1430,30 +1453,29 @@
             }
         },
         //对自身元素以及所有子元素进行归队处理
-        childRejoin(trees,clear) {
-            if(clear){
+        childRejoin(trees, clear) {
+            if (clear) {
                 trees.$el = [];
                 trees.$state.if = [];
                 trees.$state.parent = [];
                 if (trees.css) {
-                    if(trees.$css){
+                    if (trees.$css) {
                         trees.$css.remove();
                         trees.$css = null;
                     }
                 }
-            }else{
+            } else {
                 this.treesRejoin(trees);
             }
-            
+
             //对子元素进行归队处理
-            let forbear = tree.forbear(trees.$lcpid);
             let children = trees.children;
             if (children) {
                 if (children.length > 0) {
                     for (let i = 0; i < children.length; i++) {
-                        if(clear){
-                            tree.childRejoin(children[i],true);
-                        }else{
+                        if (clear) {
+                            tree.childRejoin(children[i], true);
+                        } else {
                             //找到子元素应有的长度
                             let length = 0;
                             let self = children[i];
@@ -1472,15 +1494,11 @@
                                     let arrx = [];
                                     let objx = {};
                                     let data = {};
-                                    if(forbear.data){
-                                    let key_ = Object.keys(forbear.data);
-                                    for (let i = 0; i < key_.length; i++) {
-                                        data[key_[i]] = forbear.data[key_[i]]
-                                    }
-                                }
+                                    tree.parentToTreesDataRender(self.$lcpid, data);
+
                                     for (let j = 0; j < trees.$el.length; j++) {
                                         tree.reality(trees, arrx, manage, manage_, objx, managex, data);
-    
+
                                         let render = tree.textParse(self.for, false, data);
                                         if (render instanceof Array) {
                                             length += render.length;
@@ -1503,18 +1521,18 @@
                                 self.$el = self.$el.slice(0, length);
                                 self.$state.if = self.$state.if.slice(0, length);
                                 self.$state.parent = self.$state.parent.slice(0, length);
-                                if(length > 0){
+                                if (length > 0) {
                                     this.childRejoin(self);
-                                }else{
-                                    this.childRejoin(self,true);
+                                } else {
+                                    this.childRejoin(self, true);
                                 }
-                                
+
                             }
                         }
-                        
-                        
 
-                        
+
+
+
                     }
                 }
             }
@@ -1560,12 +1578,16 @@
         },
         //通过lcpid查找虚拟描述对象
         query(lcpid) {
-            let arr = lcpid.split("-");
-            let parent = window.$lcpid[arr[0]];
-            for (let i = 1; i < arr.length; i++) {
-                parent = parent.children[arr[i]];
-            }
-            return parent;
+            if(typeof(lcpid) === 'number'){
+                return window.$lcpid[lcpid];
+            }else{
+                let arr = lcpid.split("-");
+                let parent = window.$lcpid[arr[0]];
+                for (let i = 1; i < arr.length; i++) {
+                    parent = parent.children[arr[i]];
+                }
+                return parent;
+            } 
         },
         //根据lcpid取树元素
         forbear(lcpid) {
@@ -1574,58 +1596,127 @@
         },
         //从虚拟描述里找到依赖data的部分，并记录
         treesFindData(trees) {
-            let forbear = tree.forbear(trees.$lcpid);
-            let data = forbear.listenDataList;
+            let objs = {};
+            let arrs;
+            if(typeof(trees.$lcpid) === 'number'){
+                arrs = [trees.$lcpid];
+            }else{
+                arrs = trees.$lcpid.split('-');
+            }
             if (trees.tag != "text") {
                 let classx = trees.class;
                 let style = trees.style;
+                //对css属性进行遍历
+                if (trees.css) {
+                    for (let j = 1; j <= arrs.length; j++) {
+                        let arrs_ = arrs.slice(0, j);
+                        let treex = tree.query(arrs_.join('-'));
+                        let arr = tree.textFindData(trees.css, treex.listenDataList, true);
+                        if (arr) {
+                            if (!objs[treex.$lcpid]) {
+                                objs[treex.$lcpid] = [];
+                            }
+                            objs[treex.$lcpid].push(...arr);
+                        }
+                    }
+
+
+                    let list = Object.keys(objs);
+                    for (let i = 0; i < list.length; i++) {
+                        let arr = objs[list[i]];
+                        let treex = tree.query(list[i]);
+                        let data = treex.listenDataList;
+                        for (let j = 0; j < arr.length; j++) {
+                            if (data[arr[j]][trees.$lcpid] instanceof Array) {
+                                if (!data[arr[j]][trees.$lcpid].includes("css")) {
+                                    data[arr[j]][trees.$lcpid].push("css");
+                                }
+                            } else {
+                                data[arr[j]][trees.$lcpid] = ["css"];
+                            }
+                        }
+                        objs[list[i]] = [];
+                    }
+                }
                 //对class属性进行遍历
                 if (classx) {
-                    let arrs = [];
                     if (classx instanceof Array) {
                         for (let i = 0; i < classx.length; i++) {
-                            let arr = tree.textFindData(classx[i], data, true);
-                            if (arr) {
-                                arrs.push(...arr);
+                            for (let j = 1; j <= arrs.length; j++) {
+                                let arrs_ = arrs.slice(0, j);
+                                let treex = tree.query(arrs_.join('-'));
+                                let arr = tree.textFindData(classx[i], treex.listenDataList, true);
+                                if (arr) {
+                                    if (!objs[treex.$lcpid]) {
+                                        objs[treex.$lcpid] = [];
+                                    }
+                                    objs[treex.$lcpid].push(...arr);
+                                }
                             }
+
                         }
                     } else if (classx instanceof Object) {
                         let key_ = Object.keys(classx);
                         for (let i = 0; i < key_.length; i++) {
                             if (typeof (classx[key_[i]]) === "string") {
-                                let arr = tree.textFindData(classx[key_[i]], data, false);
-                                if (arr) {
-                                    arrs.push(...arr);
+                                for (let j = 1; j <= arrs.length; j++) {
+                                    let arrs_ = arrs.slice(0, j);
+                                    let treex = tree.query(arrs_.join('-'));
+                                    let arr = tree.textFindData(classx[key_[i]], treex.listenDataList, false);
+
+                                    if (arr) {
+                                        if (!objs[treex.$lcpid]) {
+                                            objs[treex.$lcpid] = [];
+                                        }
+                                        objs[treex.$lcpid].push(...arr);
+                                    }
                                 }
+
                             }
                         }
                     } else {
-                        let arr = tree.textFindData(classx, data, true);
-                        if (arr) {
-                            arrs.push(...arr);
-                        }
-                    }
-                    for (let i = 0; i < arrs.length; i++) {
-                        if (data[arrs[i]][trees.$lcpid] instanceof Array) {
-                            if (!data[arrs[i]][trees.$lcpid].includes("class")) {
-                                data[arrs[i]][trees.$lcpid].push("class");
+                        for (let j = 1; j <= arrs.length; j++) {
+                            let arrs_ = arrs.slice(0, j);
+                            let treex = tree.query(arrs_.join('-'));
+                            let arr = tree.textFindData(classx, treex.listenDataList, true);
+                            if (arr) {
+                                if (!objs[treex.$lcpid]) {
+                                    objs[treex.$lcpid] = [];
+                                }
+                                objs[treex.$lcpid].push(...arr);
                             }
-                        } else {
-                            data[arrs[i]][trees.$lcpid] = ["class"];
                         }
+
                     }
+                    let list = Object.keys(objs);
+                    for (let i = 0; i < list.length; i++) {
+                        let arr = objs[list[i]];
+                        let treex = tree.query(list[i]);
+                        let data = treex.listenDataList;
+                        for (let j = 0; j < arr.length; j++) {
+                            if (data[arr[j]][trees.$lcpid] instanceof Array) {
+                                if (!data[arr[j]][trees.$lcpid].includes("class")) {
+                                    data[arr[j]][trees.$lcpid].push("class");
+                                }
+                            } else {
+                                data[arr[j]][trees.$lcpid] = ["class"];
+                            }
+                        }
+                        objs[list[i]] = [];
+                    }
+
                 }
 
                 //对style属性进行遍历
                 if (style) {
-                    let arrs = [];
                     //对数组进行转换
                     let styles = {};
                     if (style instanceof Array) {
                         for (let i = 0; i < style.length; i++) {
                             if (style[i] instanceof Object) {
-                                for (let key in style[i]) {
-                                    styles[key] = style[i][key];
+                                let key_ = Object.keys(style[i]);
+                                for (let j = 0; j < key_.length; j++) {
+                                    styles[key_[j]] = style[i][key_[j]];
                                 }
                             }
                         }
@@ -1635,134 +1726,232 @@
                     if (style instanceof Object) {
                         let key_ = Object.keys(style);
                         for (let i = 0; i < key_.length; i++) {
-                            let arr = tree.textFindData(style[key_[i]], data, true);
-                            if (arr) {
-                                arrs.push(...arr);
+                            for (let j = 1; j <= arrs.length; j++) {
+                                let arrs_ = arrs.slice(0, j);
+                                let treex = tree.query(arrs_.join('-'));
+                                let arr = tree.textFindData(style[key_[i]], treex.listenDataList, true);
+                                if (arr) {
+                                    if (!objs[treex.$lcpid]) {
+                                        objs[treex.$lcpid] = [];
+                                    }
+                                    objs[treex.$lcpid].push(...arr);
+                                }
                             }
+
                         }
                     } else {
-                        let arr = tree.textFindData(style, data, true);
-                        if (arr) {
-                            arrs.push(...arr);
-                        }
-                    }
-                    for (let i = 0; i < arrs.length; i++) {
-                        if (data[arrs[i]][trees.$lcpid] instanceof Array) {
-                            if (!data[arrs[i]][trees.$lcpid].includes("style")) {
-                                data[arrs[i]][trees.$lcpid].push("style");
+                        for (let j = 1; j <= arrs.length; j++) {
+                            let arrs_ = arrs.slice(0, j);
+                            let treex = tree.query(arrs_.join('-'));
+                            let arr = tree.textFindData(style, treex.listenDataList, true);
+                            if (arr) {
+                                if (!objs[treex.$lcpid]) {
+                                    objs[treex.$lcpid] = [];
+                                }
+                                objs[treex.$lcpid].push(...arr);
                             }
-                        } else {
-                            data[arrs[i]][trees.$lcpid] = ["style"];
                         }
                     }
+                    let list = Object.keys(objs);
+                    for (let i = 0; i < list.length; i++) {
+                        let arr = objs[list[i]];
+                        let treex = tree.query(list[i]);
+                        let data = treex.listenDataList;
+                        for (let j = 0; j < arr.length; j++) {
+                            if (data[arr[j]][trees.$lcpid] instanceof Array) {
+                                if (!data[arr[j]][trees.$lcpid].includes("style")) {
+                                    data[arr[j]][trees.$lcpid].push("style");
+                                }
+                            } else {
+                                data[arr[j]][trees.$lcpid] = ["style"];
+                            }
+                        }
+                        objs[list[i]] = [];
+                    }
+
                 }
 
                 //对其他属性进行循环遍历
                 if (trees.$other) {
                     let key_ = Object.keys(trees.$other);
-                    let arrs = [];
                     for (let i = 0; i < key_.length; i++) {
                         if (typeof (trees[key_[i]]) === "string") {
-                            let arr = tree.textFindData(trees[key_[i]], data, true);
-                            if (arr) {
-                                arrs.push(...arr);
+                            for (let j = 1; j <= arrs.length; j++) {
+                                let arrs_ = arrs.slice(0, j);
+                                let treex = tree.query(arrs_.join('-'));
+                                let arr = tree.textFindData(trees[key_[i]], treex.listenDataList, true);
+                                if (arr) {
+                                    if (!objs[treex.$lcpid]) {
+                                        objs[treex.$lcpid] = [];
+                                    }
+                                    objs[treex.$lcpid].push(...arr);
+                                }
                             }
+
                         }
                     }
-                    for (let i = 0; i < arrs.length; i++) {
-                        if (data[arrs[i]][trees.$lcpid] instanceof Array) {
-                            if (!data[arrs[i]][trees.$lcpid].includes("other")) {
-                                data[arrs[i]][trees.$lcpid].push("other");
+                    let list = Object.keys(objs);
+                    for (let i = 0; i < list.length; i++) {
+                        let arr = objs[list[i]];
+                        let treex = tree.query(list[i]);
+                        let data = treex.listenDataList;
+                        for (let j = 0; j < arr.length; j++) {
+                            if (data[arr[j]][trees.$lcpid] instanceof Array) {
+                                if (!data[arr[j]][trees.$lcpid].includes("other")) {
+                                    data[arr[j]][trees.$lcpid].push("other");
+                                }
+                            } else {
+                                data[arr[j]][trees.$lcpid] = ["other"];
                             }
-                        } else {
-                            data[arrs[i]][trees.$lcpid] = ["other"];
                         }
+                        objs[list[i]] = [];
                     }
+
 
                 }
 
                 //当show存在且为false
-                let arrs = [];
                 if (trees.hasOwnProperty('show')) {
                     if (typeof (trees.show) === "string") {
-                        let arr = tree.textFindData(trees.show, data, false);
-                        if (arr) {
-                            arrs.push(...arr);
+                        for (let j = 1; j <= arrs.length; j++) {
+                            let arrs_ = arrs.slice(0, j);
+                            let treex = tree.query(arrs_.join('-'));
+                            let arr = tree.textFindData(trees.show, treex.listenDataList, false);
+                            if (arr) {
+                                if (!objs[treex.$lcpid]) {
+                                    objs[treex.$lcpid] = [];
+                                }
+                                objs[treex.$lcpid].push(...arr);
+                            }
                         }
+
                     }
                 }
-                for (let i = 0; i < arrs.length; i++) {
-                    if (data[arrs[i]][trees.$lcpid] instanceof Array) {
-                        if (!data[arrs[i]][trees.$lcpid].includes("show")) {
-                            data[arrs[i]][trees.$lcpid].push("show");
+                let list = Object.keys(objs);
+                for (let i = 0; i < list.length; i++) {
+                    let arr = objs[list[i]];
+                    let treex = tree.query(list[i]);
+                    let data = treex.listenDataList;
+                    for (let j = 0; j < arr.length; j++) {
+                        if (data[arr[j]][trees.$lcpid] instanceof Array) {
+                            if (!data[arr[j]][trees.$lcpid].includes("show")) {
+                                data[arr[j]][trees.$lcpid].push("show");
+                            }
+                        } else {
+                            data[arr[j]][trees.$lcpid] = ["show"];
                         }
-                    } else {
-                        data[arrs[i]][trees.$lcpid] = ["show"];
                     }
+                    objs[list[i]] = [];
                 }
+
 
             }
 
 
             //判断这个元素是否有text属性，且没有子元素的情况下，直接给文本内容
-            let arrs = [];
             if (trees['text']) {
                 let chx = trees['children'] && trees['children'].length;
                 if (!chx) {
-                    let arr = tree.textFindData(trees.text, data, true);
-                    if (arr) {
-                        arrs.push(...arr);
+                    if (trees.tag != "pre" && trees.tag != "code") {
+                        for (let j = 1; j <= arrs.length; j++) {
+                            let arrs_ = arrs.slice(0, j);
+                            let treex = tree.query(arrs_.join('-'));
+                            let arr = tree.textFindData(trees.text, treex.listenDataList, true);
+                            if (arr) {
+                                if (!objs[treex.$lcpid]) {
+                                    objs[treex.$lcpid] = [];
+                                }
+                                objs[treex.$lcpid].push(...arr);
+                            }
+                        }
+                        let list = Object.keys(objs);
+                        for (let i = 0; i < list.length; i++) {
+                            let arr = objs[list[i]];
+                            let treex = tree.query(list[i]);
+                            let data = treex.listenDataList;
+                            for (let j = 0; j < arr.length; j++) {
+                                if (data[arr[j]][trees.$lcpid] instanceof Array) {
+                                    if (!data[arr[j]][trees.$lcpid].includes("text")) {
+                                        data[arr[j]][trees.$lcpid].push("text");
+                                    }
+                                } else {
+                                    data[arr[j]][trees.$lcpid] = ["text"];
+                                }
+                            }
+                            objs[list[i]] = [];
+                        }
                     }
-                }
-            }
-            for (let i = 0; i < arrs.length; i++) {
-                if (data[arrs[i]][trees.$lcpid] instanceof Array) {
-                    if (!data[arrs[i]][trees.$lcpid].includes("text")) {
-                        data[arrs[i]][trees.$lcpid].push("text");
-                    }
-                } else {
-                    data[arrs[i]][trees.$lcpid] = ["text"];
+
+
                 }
             }
 
 
             //当if属性不存在或者if为true
-            arrs = [];
             if (trees.hasOwnProperty('if')) {
                 if (typeof (trees.if) === "string") {
-                    let arr = tree.textFindData(trees.if, data, false);
-                    if (arr) {
-                        arrs.push(...arr);
+                    for (let j = 1; j <= arrs.length; j++) {
+                        let arrs_ = arrs.slice(0, j);
+                        let treex = tree.query(arrs_.join('-'));
+                        let arr = tree.textFindData(trees.if, treex.listenDataList, false);
+                        if (arr) {
+                            if (!objs[treex.$lcpid]) {
+                                objs[treex.$lcpid] = [];
+                            }
+                            objs[treex.$lcpid].push(...arr);
+                        }
                     }
+
                 }
             }
-            for (let i = 0; i < arrs.length; i++) {
-                if (data[arrs[i]][trees.$lcpid] instanceof Array) {
-                    if (!data[arrs[i]][trees.$lcpid].includes("if")) {
-                        data[arrs[i]][trees.$lcpid].push("if");
+            list = Object.keys(objs);
+            for (let i = 0; i < list.length; i++) {
+                let arr = objs[list[i]];
+                let treex = tree.query(list[i]);
+                let data = treex.listenDataList;
+                for (let j = 0; j < arr.length; j++) {
+                    if (data[arr[j]][trees.$lcpid] instanceof Array) {
+                        if (!data[arr[j]][trees.$lcpid].includes("if")) {
+                            data[arr[j]][trees.$lcpid].push("if");
+                        }
+                    } else {
+                        data[arr[j]][trees.$lcpid] = ["if"];
                     }
-                } else {
-                    data[arrs[i]][trees.$lcpid] = ["if"];
                 }
+                objs[list[i]] = [];
             }
 
+
             //当for存在
-            arrs = [];
             if (trees.hasOwnProperty('for')) {
                 if (typeof (trees.for) === "string") {
-                    let arr = tree.textFindData(trees.for, data, false);
-                    if (arr) {
-                        arrs.push(...arr);
+                    for (let j = 1; j <= arrs.length; j++) {
+                        let arrs_ = arrs.slice(0, j);
+                        let treex = tree.query(arrs_.join('-'));
+                        let arr = tree.textFindData(trees.for, treex.listenDataList, false);
+                        if (arr) {
+                            if (!objs[treex.$lcpid]) {
+                                objs[treex.$lcpid] = [];
+                            }
+                            objs[treex.$lcpid].push(...arr);
+                        }
                     }
+
                 }
             }
-            for (let i = 0; i < arrs.length; i++) {
-                if (data[arrs[i]][trees.$lcpid] instanceof Array) {
-                    if (!data[arrs[i]][trees.$lcpid].includes("for")) {
-                        data[arrs[i]][trees.$lcpid].push("for");
+            list = Object.keys(objs);
+            for (let i = 0; i < list.length; i++) {
+                let arr = objs[list[i]];
+                let treex = tree.query(list[i]);
+                let data = treex.listenDataList;
+                for (let j = 0; j < arr.length; j++) {
+                    if (data[arr[j]][trees.$lcpid] instanceof Array) {
+                        if (!data[arr[j]][trees.$lcpid].includes("for")) {
+                            data[arr[j]][trees.$lcpid].push("for");
+                        }
+                    } else {
+                        data[arr[j]][trees.$lcpid] = ["for"];
                     }
-                } else {
-                    data[arrs[i]][trees.$lcpid] = ["for"];
                 }
             }
 
@@ -1989,6 +2178,26 @@
             }
 
         },
+        //将祖元素以及所有的父元素的data进行临时渲染
+        parentToTreesDataRender(lcpid, data) {
+            let arr;
+            if(typeof(lcpid) === 'number'){
+                arr = [lcpid];
+            }else{
+                arr = lcpid.split('-');
+            }
+            for (let i = 0; i < arr.length; i++) {
+                let arrs = arr.slice(0, i + 1);
+                let treex = tree.query(arrs.join('-'));
+                if (treex.data) {
+                    let key_ = Object.keys(treex.data);
+                    for (let j = 0; j < key_.length; j++) {
+                        data[key_[j]] = treex.data[key_[j]];
+                    }
+                }
+            }
+
+        },
         //判断依赖不依赖父元素的列表循环关键词
         findParentFor(trees, lcpid, lcpid2) {
             let parent = this.forbear(lcpid);
@@ -2195,7 +2404,7 @@
         },
         //在文本里找到变量的关键词
         textFindKey(text, key) {
-            let reg = new RegExp(`(?<=^|\\s|\\+|-|\\*|\\/|%|\\(|\\?|:|\\[|\\>|\\<|=)(${key})(?=$|\\s|\\.|\\]|\\+|-|\\*|\\/|%|\\(|\\?|:|\\[|\\)|\\>|\\<|=)`, "g");
+            let reg = new RegExp(`(?<=^|\\s|\\+|-|\\*|\\/|%|\\(|\\?|:|\\[|\\>|\\<|=)(${key})(?=$|\\s|\\.|\\]|\\+|-|\\*|\\/|%|\\(|\\?|:|\\[|\\)|\\>|\\<|=)`);
             return reg.test(text);
         },
         listenTrunk(treex) { //对子元素数组的变化进行监听
@@ -2254,10 +2463,11 @@
                     if (property == "tag") {
                         throw "不可以直接修改子元素的标签名";
                     }
-                    let forbear = tree.forbear(self.$lcpid);
                     //判断是不是列表渲染
                     //是列表渲染
-
+                    let data_ = {};
+                    tree.parentToTreesDataRender(self.$lcpid, data_);
+                    let realData = treesRealData[self.$lcpid];
                     if (el instanceof Array) {
                         //将记录器清空
                         let manage = {};
@@ -2265,14 +2475,6 @@
                         let managex = {};
                         let arrx = [];
                         let objx = {};
-                        let data_ = {};
-                        let realData = treesRealData[self.$lcpid];
-                        if(forbear.data){
-                            let key_ = Object.keys(forbear.data);
-                            for (let i = 0; i < key_.length; i++) {
-                                data_[key_[i]] = forbear.data[key_[i]]
-                            }
-                        }
                         let class_isArr = value_ instanceof Array;
                         let class_isObj = value_ instanceof Object;
                         let class_obj = Object.keys(value_);
@@ -2316,7 +2518,12 @@
                                 if (self.text && !chx) {
                                     //依赖进行更新
                                     let texts = tree.textParse(value_, true, data_);
-                                    el[i].textContent = texts;
+                                    if (self.tag == 'svg') {
+                                        el[i].innerHTML = texts;
+                                    } else {
+                                        el[i].textContent = texts;
+                                    }
+
                                     target[property] = value_;
                                     realData[i].text = texts;
                                 }
@@ -2545,7 +2752,12 @@
                             if (self['text'] && !chx) {
                                 //依赖进行更新
                                 let texts = tree.textParse(value_, true, data_);
-                                el.textContent = texts;
+                                if (self.tag == 'svg') {
+                                    el.innerHTML = texts;
+                                } else {
+                                    el.textContent = texts;
+                                }
+
                                 target[property] = value_;
                                 realData[0].text = texts;
                             }
@@ -2740,7 +2952,8 @@
                     }
                     //对css属性更改时
                     if (property == "css") {
-                        let text = value_.replace(/\{lcpid\}/g, "*[v-lcpid='"+target.$lcpid+"']");
+                        let text = value_.replace(/\{lcpid\}/g, "*[v-lcpid='" + target.$lcpid + "']");
+                        text = tree.textParse(text, true, data_);
                         //当原本没有css时
                         if (!target.css) {
                             let style = document.createElement("style");
@@ -3038,7 +3251,6 @@
 
         },
         updateForList(trees, p, val) {
-            let forbear = tree.forbear(trees.$lcpid);
             //开始数据更新
             //取依赖自身列表渲染的元素
             let forList = trees.$forList;
@@ -3078,12 +3290,8 @@
                         other_obj = Object.keys(self.$other);
                     }
                     let data = {};
-                    if(forbear.data){
-                    let keyx_ = Object.keys(forbear.data);
-                    for (let i = 0; i < keyx_.length; i++) {
-                        data[keyx_[i]] = forbear.data[keyx_[i]]
-                    }
-                }
+                    tree.parentToTreesDataRender(self.$lcpid, data);
+
                     let realData = treesRealData[key_[i]];
                     for (let l = 0; l < self.$el.length; l++) {
                         //对数据进行更新
@@ -3110,7 +3318,12 @@
                                     //取最新的数据
                                     let new_text = tree.textParse(self.text, true, data);
                                     if (realData_.text != new_text) {
-                                        tag.textContent = new_text;
+                                        if (self.tag == 'svg') {
+                                            tag.innerHTML = new_text;
+                                        } else {
+                                            tag.textContent = new_text;
+                                        }
+
                                         realData_.text = new_text;
                                     }
                                 }
@@ -3325,7 +3538,6 @@
         },
         //对依赖data数据的树进行更新
         updateTree(treex, p, val) {
-            let forbear = treex;
             let obj = treex.listenDataList[p];
             //对依赖的所有树进行遍历
             let keys_ = Object.keys(obj);
@@ -3365,13 +3577,17 @@
                     parent: trees.parent()
                 };
                 let data = {};
-                if(forbear.data){
-                let keyx_ = Object.keys(forbear.data);
-
-                for (let j = 0; j < keyx_.length; j++) {
-                    data[keyx_[j]] = forbear.data[keyx_[j]]
+                tree.parentToTreesDataRender(trees.$lcpid, data);
+                //判断有没有css属性
+                if (trees.css) {
+                    //css属性依赖这个data数据时
+                    if (arr.includes("css")) {
+                        let css = trees.css.replace(/\{lcpid\}/g, "*[v-lcpid='" + trees.$lcpid + "']");
+                        let render = tree.textParse(css, true, data);
+                        //更新
+                        trees.$css.textContent = render;
+                    }
                 }
-            }
                 //判断树是不是列表循环
                 if (trees.$for) {
 
@@ -3434,12 +3650,12 @@
                                 trees.$state.parent = trees.$state.parent.slice(0, length);
                                 trees.$state.if = trees.$state.if.slice(0, length);
                                 treesRealData[trees.$lcpid] = treesRealData[trees.$lcpid].slice(0, length);
-                                if(length > 0){
+                                if (length > 0) {
                                     tree.childRejoin(trees);
-                                }else{
-                                    tree.childRejoin(trees,true);
+                                } else {
+                                    tree.childRejoin(trees, true);
                                 }
-                                    
+
                             }
                             //对依赖自身列表渲染的数据进行更新
                             tree.updateForList(trees, p, val);
@@ -3488,10 +3704,10 @@
                                     trees.$state.parent = trees.$state.parent.slice(0, length);
                                     trees.$state.if = trees.$state.if.slice(0, length);
                                     treesRealData[trees.$lcpid] = treesRealData[trees.$lcpid].slice(0, length);
-                                    if(length > 0){
+                                    if (length > 0) {
                                         tree.childRejoin(trees);
-                                    }else{
-                                        tree.childRejoin(trees,true);
+                                    } else {
+                                        tree.childRejoin(trees, true);
                                     }
                                 }
 
@@ -3508,12 +3724,8 @@
                     let arrx = [];
                     let objx = {};
                     let data_ = {};
-                    if(forbear.data){
-                    let keyx_ = Object.keys(forbear.data);
-                    for (let j = 0; j < keyx_.length; j++) {
-                        data_[keyx_[j]] = forbear.data[keyx_[j]]
-                    }
-                }
+                    tree.parentToTreesDataRender(trees.$lcpid, data_);
+
                     for (let j = 0; j < tag.length; j++) {
                         //渲染列表循环的数据
                         tree.reality(trees, arrx, manage, manage_, objx, managex, data_);
@@ -3559,7 +3771,12 @@
                         let new_text = tree.textParse(trees.text, true, data);
                         //数据更新
                         if (text != new_text) {
-                            tag.textContent = new_text;
+                            if (trees.tag == 'svg') {
+                                tag.innerHTML = new_text;
+                            } else {
+                                tag.textContent = new_text;
+                            }
+
                             realData.text = new_text;
                         }
                     }
@@ -3569,6 +3786,7 @@
                 if (arr[i] == "other") {
                     //数据更新
                     //对其他属性进行循环遍历
+
                     if (trees.$other) {
                         let key_ = state.other_obj;
                         for (let k = 0; k < key_.length; k++) {
@@ -3577,8 +3795,8 @@
                                 let value_ = realData.other[key_[k]];
                                 let new_value_ = tree.textParse(trees.$other[key_[k]], true, data);
                                 if (value_ != new_value_) {
-                                    tag.setAttribute(key_[k], value_);
-                                    realData.other[key_[k]] = value_;
+                                    tag.setAttribute(key_[k], new_value_);
+                                    realData.other[key_[k]] = new_value_;
                                 }
                             }
                         }
@@ -3778,19 +3996,19 @@
             for (let i = 0; i < datas.length; i++) {
                 let key = datas[i];
                 if (data[key] instanceof Array || data[key] instanceof Object) {
-                    if(!Object.isFrozen(data[key])){
-                        this.listenDatas(data,key, key,treex);
+                    if (!Object.isFrozen(data[key])) {
+                        this.listenDatas(data, key, key, treex);
                     }
-                    
+
                 }
             }
             treex.$load = false;
         },
         //不停的遍历，并监听
-        listenDatas(data,p, key,treex) {
-            this.proxy(data,p, {
+        listenDatas(data, p, key, treex) {
+            this.proxy(data, p, {
                 set(target, prop, val) {
-                    if(!treex.$load){
+                    if (!treex.$load) {
                         if (treex.listenDataList[key] instanceof Object) {
                             target[prop] = val;
                             tree.updateTree(treex, key, val);
@@ -3803,35 +4021,36 @@
             if (data[p] instanceof Array) {
                 for (let i = 0; i < data[p].length; i++) {
                     if (data[p][i] instanceof Array || data[p][i] instanceof Object) {
-                        if(!Object.isFrozen(data[p][i])){
-                            this.listenDatas(data[p],i, key,treex);
-                        } 
+                        if (!Object.isFrozen(data[p][i])) {
+                            this.listenDatas(data[p], i, key, treex);
+                        }
                     }
                 }
             } else {
                 let key_ = Object.keys(data[p]);
                 for (let i = 0; i < key_.length; i++) {
                     if (data[p][key_[i]] instanceof Array || data[p][key_[i]] instanceof Object) {
-                        if(!Object.isFrozen(data[p][key_[i]])){
-                            this.listenDatas(data[p],key_[i], key,treex);
+                        if (!Object.isFrozen(data[p][key_[i]])) {
+                            this.listenDatas(data[p], key_[i], key, treex);
                         }
                     }
                 }
             }
         },
-        proxy(data,p, obj) {
+        proxy(data, p, obj) {
             data[p] = new Proxy(data[p], obj);
         }
     }
 
     function createAPP(obj) {
-        let this_ = {};
+        let this_ = lcpx.copy(obj);
         //判断传过来的el是不是文本
         if (typeof obj.el == 'string') {
             this_.$el = document.querySelector(obj.el);
         } else {
             this_.$el = obj.el;
         }
+        delete this_.el;
         this_.listenDataList = {};
         this_.$load = true;
         //对data的数据进行数据双向绑定
@@ -3844,29 +4063,24 @@
                     }
                     //数据进行更新
                     //有元素依赖这个数据时
-                    if(!this_.$load){
+                    if (!this_.$load) {
                         if (this_.listenDataList[p] instanceof Object) {
                             target[p] = newValue;
                             tree.updateTree(this_, p, newValue);
                         }
                     }
-                    
+
                     target[p] = newValue;
                     return true;
                 }
             })
         }
         //对data数据进行深层次的监听
-        if(this_.data){
+        if (this_.data) {
             tree.listenData(this_);
         }
-        
-        //对子元素进行深copy
-        if (!obj.children) {
-            this_.children = [];
-        } else {
-            this_.children = lcpx.copy(obj.children);
-        }
+        this_.$state = {};
+        this_.$other = {};
         //将this记录到虚拟id列表上
         let i = window.$lcpid.push(this_);
         //将虚拟id绑定到父元素上
@@ -3874,13 +4088,50 @@
         this_.$lcpid = i - 1;
         this_.$index_ = i - 1;
         //记录数据绑定的源头，使数据更新的更精准
-        if(this_.data){
+        if (this_.data) {
             let key_ = Object.keys(this_.data);
             for (let i = 0; i < key_.length; i++) {
                 this_.listenDataList[key_[i]] = {};
             }
         }
-        
+        //将其他属性进行一个初始化
+        let key_ = Object.keys(this_);
+        for (let k = 0; k < key_.length; k++) {
+            if (!exclude.includes(key_[k])) {
+                this_.$other[key_[k]] = this_[key_[k]];
+            }
+        }
+        treesRealData[this_.$lcpid] = [];
+        let show_if = this_.hasOwnProperty("show");
+        let if_if = this_.hasOwnProperty("if");
+        let class_isArr = this_.class instanceof Array;
+        let class_isObj = this_.class instanceof Object;
+        let style_isObj = this_.style instanceof Object;
+        let style_isArr = this_.style instanceof Array;
+        let style_obj, class_obj, other_obj;
+        if (style_isObj) {
+            style_obj = Object.keys(this_.style);
+        }
+        if (class_isObj) {
+            class_obj = Object.keys(this_.class);
+        }
+        if (this_.$other) {
+            other_obj = Object.keys(this_.$other);
+        }
+        let state = {
+            show_if: show_if,
+            if_if: if_if,
+            class_isArr: class_isArr,
+            class_isObj: class_isObj,
+            style_isArr: style_isArr,
+            style_isObj: style_isObj,
+            style_obj: style_obj,
+            class_obj: class_obj,
+            other_obj: other_obj
+        };
+        tree.render(this_, 0, state, this_.data,this_.$el);
+        tree.treesFindData(this_);
+        //tree.listenTree(window.$lcpid,this_,i);
         //记录树干的自定义列表循环关键词
         this_.forKeyList = {
             value: {},
@@ -3916,6 +4167,9 @@
 
         //对Lcp实例子元素变化进行监听
         tree.listenTrunk(this_);
+        this_.parent = function () {
+            return this;
+        }
         //规定用这个方法来添加子元素
         this_.appendChild = function (obj) {
             let i = this.children.push(lcpx.copy(obj));
@@ -4141,5 +4395,41 @@ const lcpx = {
                     newObj = obj;
                 }
         return newObj;
+    },
+    parserHTML(html) {
+        let arr = [];
+        let parser = new DOMParser();
+        let dom = parser.parseFromString(html, 'text/html').querySelector('body');
+        this.htmlToTrees(dom, arr);
+        return arr;
+    },
+    htmlToTrees(dom, arr) {
+        let children = dom.childNodes;
+        for (let i = 0; i < children.length; i++) {
+            let obj = {};
+            if (children[i].nodeName == "#text") {
+                obj.tag = "text";
+            } else {
+                obj.tag = children[i].localName;
+                //绑定属性
+                let attributes = children[i].attributes;
+                if (attributes.length > 0) {
+                    for (let i = 0; i < attributes.length; i++) {
+                        obj[attributes[i].name] = attributes[i].value;
+                    }
+                }
+                if (obj.tag == "svg") {
+                    obj.text = children[i].innerHTML;
+                } else {
+                    if (children[i].childNodes.length > 1) {
+                        obj.children = [];
+                        this.htmlToTrees(children[i], obj.children);
+                    } else {
+                        obj.text = children[i].textContent;
+                    }
+                }
+            }
+            arr.push(obj);
+        }
     }
 }
